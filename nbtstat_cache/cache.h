@@ -18,9 +18,17 @@
 #define GET_ADAPTER_LIST                         IOCTL(0x035)
 #define GET_ADAPTER_INFO                         IOCTL(0x029)
 #define GET_ADAPTER_CACHE                        IOCTL(0x021)
+#define QUERY_IP_ADDRESS                         IOCTL(0x02B)
 
-#define UNIQUE_TYPE 0
-#define GROUP_TYPE 4
+
+typedef struct _WTF_STRUCT
+{
+	long address;
+	long unknown;
+	long unknown2;
+	char reserved[2];
+	char name[18];
+}WTF_STRUCT, * PWTF_STRUCT;
 
 typedef struct _ADAPTERS
 {
@@ -51,6 +59,21 @@ typedef struct _NBT_CACHE
 	short numEntries;
 	char firstEntry[1];
 }NBT_CACHE, * PNBT_CACHE;
+
+typedef struct _QUERY_ENTRY
+{
+	char NbtName[15];
+	char lastByte;
+	char reserved[1];
+	char type;
+}QUERY_ENTRY, * PQUERY_ENTRY;
+
+typedef struct _NBT_QUERY
+{
+	char reserved[0x3a];
+	short numEntries;
+	char firstEntry[1];
+}NBT_QUERY, * PNBT_QUERY;
 
 typedef void (*RtlInitUnicodeString_fp)(PUNICODE_STRING, PCWSTR);
 typedef NTSTATUS(*RtlGuidFromString_fp)(PUNICODE_STRING, GUID*);

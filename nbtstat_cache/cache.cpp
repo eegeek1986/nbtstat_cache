@@ -238,11 +238,11 @@ void printDeviceCache(PWCHAR dev)
 			InetNtopW(AF_INET, (PVOID)&raddr, ripAddress, 16);
 
 			wprintf(L"    %S<%02x>  ", name, cacheEntry->lastByte);
-			if (cacheEntry->type == UNIQUE_TYPE)
+			if (-1 < cacheEntry->type)
 			{
 				wprintf(L"UNIQUE          ");
 			}
-			else if (cacheEntry->type == GROUP_TYPE)
+			else
 			{
 				wprintf(L"GROUP          ");
 			}
@@ -253,6 +253,224 @@ void printDeviceCache(PWCHAR dev)
 	}
 	CloseHandle(dHandle);
 	HeapFree(GetProcessHeap(), 0, cacheInfo);
+	return;
+}
+
+void queryDeviceName(PWCHAR dev, PWCHAR name)
+{
+	HANDLE dHandle = INVALID_HANDLE_VALUE;
+	wchar_t fullDev[MAX_PATH] = L"\\\\?\\globalroot";
+	PWCHAR guid = wcschr(dev, L'{');
+	wcscat_s(fullDev, MAX_PATH - 28, dev);
+	PNBT_QUERY queryInfo = NULL;
+	DWORD bytesReturned = 0;
+
+	dHandle = CreateFileW(
+		fullDev,
+		GENERIC_ALL,
+		FILE_SHARE_READ | FILE_SHARE_WRITE,
+		NULL,
+		OPEN_EXISTING,
+		FILE_ATTRIBUTE_NORMAL,
+		NULL);
+
+
+	if (dHandle == INVALID_HANDLE_VALUE)
+	{
+		wprintf(L"\t\t[-] Unable to open %s: 0x%x\n", fullDev, GetLastError());
+		return;
+	}
+
+	queryInfo = (PNBT_QUERY)HeapAlloc(GetProcessHeap(), HEAP_ZERO_MEMORY, 0x600);
+
+	if (queryInfo == NULL)
+	{
+		wprintf(L"\t\t[-]Unable to allocate memory: %d\n", GetLastError());
+		return;
+	}
+
+	PWTF_STRUCT wtfStruct = (PWTF_STRUCT)HeapAlloc(GetProcessHeap(), HEAP_ZERO_MEMORY, sizeof(WTF_STRUCT));
+	wtfStruct->address = 0;
+	wtfStruct->unknown = 1;
+	wtfStruct->unknown2 = 0x110012;
+	
+	size_t size = 0;
+	wcstombs_s(&size, wtfStruct->name, 18, name, 15);
+
+	if (!DeviceIoControl(dHandle, QUERY_IP_ADDRESS, wtfStruct, 0x20, queryInfo, 0x600, &bytesReturned, NULL))
+	{
+		DWORD error = GetLastError();
+		if (error == 0x79)
+		{
+			wprintf(L"    Host not found.\n\n");
+		}
+		else
+		{
+			wprintf(L"    Error: 0x%X\n", error);
+		}
+	}
+	else
+	{
+		PQUERY_ENTRY queryEntry = (PQUERY_ENTRY)queryInfo->firstEntry;
+		wprintf(L"           NetBIOS Remote Machine Name Table\n\n");
+		wprintf(L"       Name               Type         Status\n");
+		wprintf(L"    ---------------------------------------------\n");
+		for (int i = 0; i < queryInfo->numEntries; i++, queryEntry++)
+		{
+			char name[16] = { 0 };
+
+			memcpy(name, queryEntry->NbtName, 15);
+
+			wprintf(L"    %S<%02x>  ", name, queryEntry->lastByte);
+			if (-1 < queryEntry->type)
+			{
+				wprintf(L"UNIQUE        ");
+			}
+			else
+			{
+				wprintf(L"GROUP         ");
+			}
+
+			char status = queryEntry->type & 0xf;
+			if (status == 0)
+			{
+				wprintf(L"Registering\n");
+			}
+			else if (status == 4)
+			{
+				wprintf(L"Registered\n");
+			}
+			else if (status == 5)
+			{
+				wprintf(L"Deregistered\n");
+			}
+			else if (status == 6)
+			{
+				wprintf(L"Conflict\n");
+			}
+			else if (status == 7)
+			{
+				wprintf(L"Conflict-Deregistered\n");
+			}
+			else
+			{
+				wprintf(L"??\n");
+			}
+		}
+		wprintf(L"\n");
+	}
+	CloseHandle(dHandle);
+	HeapFree(GetProcessHeap(), 0, queryInfo);
+	HeapFree(GetProcessHeap(), 0, wtfStruct);
+	return;
+}
+
+void queryDeviceIP(PWCHAR dev, PWCHAR ipString)
+{
+	HANDLE dHandle = INVALID_HANDLE_VALUE;
+	wchar_t fullDev[MAX_PATH] = L"\\\\?\\globalroot";
+	PWCHAR guid = wcschr(dev, L'{');
+	wcscat_s(fullDev, MAX_PATH - 28, dev);
+	PNBT_QUERY queryInfo = NULL;
+	DWORD bytesReturned = 0;
+
+	dHandle = CreateFileW(
+		fullDev,
+		GENERIC_ALL,
+		FILE_SHARE_READ | FILE_SHARE_WRITE,
+		NULL,
+		OPEN_EXISTING,
+		FILE_ATTRIBUTE_NORMAL,
+		NULL);
+
+
+	if (dHandle == INVALID_HANDLE_VALUE)
+	{
+		wprintf(L"\t\t[-] Unable to open %s: 0x%x\n", fullDev, GetLastError());
+		return;
+	}
+
+	queryInfo = (PNBT_QUERY)HeapAlloc(GetProcessHeap(), HEAP_ZERO_MEMORY, 0x600);
+
+	if (queryInfo == NULL)
+	{
+		wprintf(L"\t\t[-]Unable to allocate memory: %d\n", GetLastError());
+		return;
+	}
+
+	PWTF_STRUCT wtfStruct = (PWTF_STRUCT)HeapAlloc(GetProcessHeap(), HEAP_ZERO_MEMORY, sizeof(WTF_STRUCT));
+	IN_ADDR ipAddres = { 0 };
+	InetPtonW(AF_INET, ipString, &ipAddres);
+	wtfStruct->address = ntohl(ipAddres.S_un.S_addr);
+	wtfStruct->unknown = 1;
+	wtfStruct->unknown2 = 0x110012;
+	wtfStruct->name[0] = 0x2a;
+
+	if (!DeviceIoControl(dHandle, QUERY_IP_ADDRESS, wtfStruct, 0x20, queryInfo, 0x600, &bytesReturned, NULL))
+	{
+		DWORD error = GetLastError();
+		if (error == 0x79)
+		{
+			wprintf(L"    Host not found.\n\n");
+		} 
+		else
+		{
+			wprintf(L"    Error: 0x%X\n", error);
+		}
+	}
+	else
+	{
+		PQUERY_ENTRY queryEntry = (PQUERY_ENTRY)queryInfo->firstEntry;
+		wprintf(L"           NetBIOS Remote Machine Name Table\n\n");
+		wprintf(L"       Name               Type         Status\n");
+		wprintf(L"    ---------------------------------------------\n");
+		for (int i = 0; i < queryInfo->numEntries; i++, queryEntry++)
+		{
+			char name[16] = { 0 };
+
+			memcpy(name, queryEntry->NbtName, 15);
+			
+			wprintf(L"    %S<%02x>  ", name, queryEntry->lastByte);
+			if (-1 < queryEntry->type)
+			{
+				wprintf(L"UNIQUE        ");
+			}
+			else
+			{
+				wprintf(L"GROUP         ");
+			}
+
+			char status = queryEntry->type & 0xf;
+			if (status == 0)
+			{
+				wprintf(L"Registering\n");
+			}
+			else if (status == 4)
+			{
+				wprintf(L"Registered\n");
+			}
+			else if (status == 5)
+			{
+				wprintf(L"Deregistered\n");
+			}
+			else if (status == 6)
+			{
+				wprintf(L"Conflict\n");
+			}
+			else if (status == 7)
+			{
+				wprintf(L"Conflict-Deregistered\n");
+			}
+			else
+			{
+				wprintf(L"??\n");
+			}
+		}
+		wprintf(L"\n");
+	}
+	CloseHandle(dHandle);
+	HeapFree(GetProcessHeap(), 0, queryInfo);
+	HeapFree(GetProcessHeap(), 0, wtfStruct);
 	return;
 }
 
@@ -276,11 +494,42 @@ int wmain(int argc, wchar_t* argv[])
 
 	PADAPTER_NAME name = (PADAPTER_NAME)devicesOutput->firstEntry;
 
-	for (int i = 0; i < numDevices; i++, name++)
+	if (argc == 2 && argv[1][0] == L'-' && argv[1][1] == L'c')
 	{
-		printDeviceInfo(name->name);
-		printDeviceCache(name->name);
 
+		for (int i = 0; i < numDevices; i++, name++)
+		{
+			printDeviceInfo(name->name);
+			printDeviceCache(name->name);
+
+		}
+
+	}
+	else if (argc == 3 && argv[1][0] == L'-' && argv[1][1] == L'A')
+	{
+
+		for (int i = 0; i < numDevices; i++, name++)
+		{
+			printDeviceInfo(name->name);
+			queryDeviceIP(name->name, argv[2]);
+
+		}
+		
+	}
+	else if (argc == 3 && argv[1][0] == L'-' && argv[1][1] == L'a')
+	{
+
+		for (int i = 0; i < numDevices; i++, name++)
+		{
+			printDeviceInfo(name->name);
+			queryDeviceName(name->name, argv[2]);
+
+		}
+
+	}
+	else 
+	{
+		wprintf(L"unknown option\n");
 	}
 
 	HeapFree(GetProcessHeap, 0, devicesOutput);
